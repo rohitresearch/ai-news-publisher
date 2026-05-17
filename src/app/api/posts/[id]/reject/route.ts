@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { updatePostStatus } from '@/lib/database';
+import { createClient } from '@supabase/supabase-js';
+
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createClient(supabaseUrl, supabaseKey);
+}
 
 export async function POST(
   request: NextRequest,
@@ -7,8 +13,36 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const supabase = getSupabaseClient();
 
-    await updatePostStatus(id, 'rejected');
+    // Get the post first to find the article_id
+    const { data: post } = await supabase
+      .from('generated_posts')
+      .select('article_id')
+      .eq('id', id)
+      .single();
+
+    if (!post) {
+      return NextResponse.json({ error: 'Post not found' }, { status: 404 });
+    }
+
+    // Update the post status to rejected
+    await supabase
+      .from('generated_posts')
+      .update({
+        status: 'rejected',
+        approved_at: null,
+        approved_by: null,
+      })
+      .eq('id', id);
+
+    // Also update the article status to 'rejected'
+    if (post.article_id) {
+      await supabase
+        .from('articles')
+        .update({ status: 'rejected' })
+        .eq('id', post.article_id);
+    }
 
     return NextResponse.json({ success: true, status: 'rejected' });
   } catch (error) {
