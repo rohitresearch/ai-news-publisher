@@ -28,15 +28,15 @@ interface Post {
   needs_review: boolean;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  fetched: 'bg-blue-100 text-blue-800',
-  scored: 'bg-yellow-100 text-yellow-800',
-  drafted: 'bg-purple-100 text-purple-800',
-  needs_review: 'bg-orange-100 text-orange-800',
-  approved: 'bg-green-100 text-green-800',
-  published: 'bg-emerald-100 text-emerald-800',
-  rejected: 'bg-red-100 text-red-800',
-  failed: 'bg-gray-100 text-gray-800',
+const STATUS_CONFIG: Record<string, { bg: string; text: string; border: string; icon: string }> = {
+  fetched: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200', icon: '📥' },
+  scored: { bg: 'bg-yellow-50', text: 'text-yellow-600', border: 'border-yellow-200', icon: '📊' },
+  drafted: { bg: 'bg-purple-50', text: 'text-purple-600', border: 'border-purple-200', icon: '✍️' },
+  needs_review: { bg: 'bg-orange-50', text: 'text-orange-600', border: 'border-orange-200', icon: '👀' },
+  approved: { bg: 'bg-green-50', text: 'text-green-600', border: 'border-green-200', icon: '✅' },
+  published: { bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200', icon: '🚀' },
+  rejected: { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200', icon: '❌' },
+  failed: { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200', icon: '⚠️' },
 };
 
 export default function Dashboard() {
@@ -47,6 +47,7 @@ export default function Dashboard() {
   const [filter, setFilter] = useState<string>('all');
   const [editContent, setEditContent] = useState('');
   const [notification, setNotification] = useState<{ type: string; message: string } | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     fetchArticles();
@@ -70,6 +71,7 @@ export default function Dashboard() {
     setSelectedArticle(article);
     setSelectedPost(null);
     setEditContent('');
+    setIsEditing(false);
 
     try {
       const res = await fetch(`/api/articles/${article.id}`);
@@ -86,7 +88,7 @@ export default function Dashboard() {
   async function handleApprove(postId: string) {
     try {
       await fetch(`/api/posts/${postId}/approve`, { method: 'POST' });
-      showNotification('success', 'Post approved!');
+      showNotification('success', 'Post approved successfully!');
       fetchArticles();
       if (selectedArticle) selectArticle(selectedArticle);
     } catch {
@@ -97,7 +99,7 @@ export default function Dashboard() {
   async function handleReject(postId: string) {
     try {
       await fetch(`/api/posts/${postId}/reject`, { method: 'POST' });
-      showNotification('success', 'Post rejected');
+      showNotification('info', 'Post rejected');
       fetchArticles();
       if (selectedArticle) selectArticle(selectedArticle);
     } catch {
@@ -115,7 +117,7 @@ export default function Dashboard() {
         return;
       }
 
-      showNotification('success', `Published! Facebook Post ID: ${data.facebookPostId}`);
+      showNotification('success', `Published to Facebook! Post ID: ${data.facebookPostId}`);
       fetchArticles();
       if (selectedArticle) selectArticle(selectedArticle);
     } catch {
@@ -130,7 +132,8 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: editContent }),
       });
-      showNotification('success', 'Post updated!');
+      showNotification('success', 'Post updated successfully!');
+      setIsEditing(false);
       if (selectedArticle) selectArticle(selectedArticle);
     } catch {
       showNotification('error', 'Failed to update post');
@@ -139,191 +142,366 @@ export default function Dashboard() {
 
   function showNotification(type: string, message: string) {
     setNotification({ type, message });
-    setTimeout(() => setNotification(null), 3000);
+    setTimeout(() => setNotification(null), 4000);
   }
 
-  const filteredArticles = filter === 'all'
-    ? articles
-    : articles.filter((a) => a.status === filter);
+  const filteredArticles = filter === 'all' ? articles : articles.filter((a) => a.status === filter);
+
+  const stats = {
+    total: articles.length,
+    drafted: articles.filter((a) => a.status === 'drafted').length,
+    approved: articles.filter((a) => a.status === 'approved').length,
+    published: articles.filter((a) => a.status === 'published').length,
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       {notification && (
-        <div className={`fixed top-4 right-4 px-4 py-2 rounded shadow-lg z-50 ${
-          notification.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-        }`}>
-          {notification.message}
+        <div
+          className={`fixed top-6 right-6 px-5 py-3 rounded-xl shadow-xl z-50 flex items-center gap-3 animate-slide-in ${
+            notification.type === 'success'
+              ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white'
+              : notification.type === 'error'
+              ? 'bg-gradient-to-r from-red-500 to-rose-500 text-white'
+              : 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white'
+          }`}
+        >
+          <span className="text-lg">{notification.type === 'success' ? '✓' : notification.type === 'error' ? '✕' : 'ℹ'}</span>
+          <span className="font-medium">{notification.message}</span>
         </div>
       )}
 
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">AI News Publisher Dashboard</h1>
-          <p className="text-gray-500 text-sm mt-1">Manage and publish AI news to your Facebook Page</p>
+      <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                <span className="text-2xl">🤖</span>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                  AI News Publisher
+                </h1>
+                <p className="text-slate-500 text-sm">Automate your AI news content on Facebook</p>
+              </div>
+            </div>
+            <button
+              onClick={fetchArticles}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            >
+              <span className={loading ? 'animate-spin' : ''}>↻</span>
+              <span className="text-sm font-medium text-slate-700">Refresh</span>
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex gap-4 mb-6 flex-wrap">
-          {['all', 'scored', 'drafted', 'approved', 'published', 'rejected'].map((status) => (
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        <div className="grid grid-cols-4 gap-4 mb-8">
+          {[
+            { label: 'Total Articles', value: stats.total, icon: '📰', color: 'from-slate-500 to-slate-600' },
+            { label: 'Drafts Ready', value: stats.drafted, icon: '✍️', color: 'from-purple-500 to-purple-600' },
+            { label: 'Approved', value: stats.approved, icon: '✅', color: 'from-green-500 to-green-600' },
+            { label: 'Published', value: stats.published, icon: '🚀', color: 'from-emerald-500 to-emerald-600' },
+          ].map((stat, i) => (
+            <div key={i} className={`bg-gradient-to-br ${stat.color} rounded-2xl p-5 text-white shadow-lg`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white/70 text-sm font-medium">{stat.label}</p>
+                  <p className="text-3xl font-bold mt-1">{stat.value}</p>
+                </div>
+                <span className="text-4xl opacity-80">{stat.icon}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+          {[
+            { key: 'all', label: 'All Articles', icon: '📋' },
+            { key: 'drafted', label: 'Drafts', icon: '✍️' },
+            { key: 'approved', label: 'Approved', icon: '✅' },
+            { key: 'published', label: 'Published', icon: '🚀' },
+            { key: 'rejected', label: 'Rejected', icon: '❌' },
+          ].map((tab) => (
             <button
-              key={status}
-              onClick={() => setFilter(status)}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
-                filter === status
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-white text-gray-600 hover:bg-gray-100'
+              key={tab.key}
+              onClick={() => setFilter(tab.key)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+                filter === tab.key
+                  ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/30'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
               }`}
             >
-              {status === 'all' ? 'All Articles' : status.charAt(0).toUpperCase() + status.slice(1)}
+              <span>{tab.icon}</span>
+              {tab.label}
             </button>
           ))}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="px-4 py-3 border-b bg-gray-50">
-              <h2 className="font-semibold text-gray-700">Articles ({filteredArticles.length})</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+              <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+                <span>📰</span> Articles
+                <span className="ml-auto text-sm text-slate-400 font-normal">{filteredArticles.length}</span>
+              </h2>
             </div>
-            <div className="divide-y max-h-[600px] overflow-y-auto">
+            <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
               {loading ? (
-                <div className="p-8 text-center text-gray-500">Loading...</div>
+                <div className="p-8 space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="animate-pulse">
+                      <div className="h-4 bg-slate-200 rounded w-3/4 mb-2"></div>
+                      <div className="h-3 bg-slate-100 rounded w-1/2"></div>
+                    </div>
+                  ))}
+                </div>
               ) : filteredArticles.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">No articles found</div>
-              ) : (
-                filteredArticles.map((article) => (
-                  <div
-                    key={article.id}
-                    onClick={() => selectArticle(article)}
-                    className={`p-4 cursor-pointer hover:bg-gray-50 transition ${
-                      selectedArticle?.id === article.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
-                    }`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <h3 className="font-medium text-gray-900 line-clamp-2">{article.title}</h3>
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ml-2 shrink-0 ${STATUS_COLORS[article.status] || 'bg-gray-100'}`}>
-                        {article.status}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-center gap-2 text-sm text-gray-500">
-                      <span>{article.source}</span>
-                      <span>•</span>
-                      <span>{new Date(article.published_at).toLocaleDateString()}</span>
-                    </div>
-                    <div className="mt-2 flex items-center gap-3 text-xs text-gray-400">
-                      <span title="AI Relevance">AI: {article.ai_relevance_score?.toFixed(1) || '0'}</span>
-                      <span title="Final Score">Score: {article.final_score?.toFixed(1) || '0'}</span>
-                    </div>
+                <div className="p-12 text-center">
+                  <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <span className="text-3xl">📭</span>
                   </div>
-                ))
+                  <p className="text-slate-500 font-medium">No articles found</p>
+                  <p className="text-slate-400 text-sm mt-1">Run the cron job to fetch news</p>
+                </div>
+              ) : (
+                filteredArticles.map((article) => {
+                  const statusConfig = STATUS_CONFIG[article.status] || STATUS_CONFIG.fetched;
+                  return (
+                    <div
+                      key={article.id}
+                      onClick={() => selectArticle(article)}
+                      className={`p-4 cursor-pointer hover:bg-slate-50 transition-all group ${
+                        selectedArticle?.id === article.id
+                          ? 'bg-gradient-to-r from-indigo-50 to-purple-50 border-l-4 border-indigo-500'
+                          : ''
+                      }`}
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <h3 className="font-medium text-slate-800 line-clamp-2 group-hover:text-indigo-600 transition-colors">
+                          {article.title}
+                        </h3>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                        <span className="font-medium">{article.source}</span>
+                        <span>•</span>
+                        <span>{new Date(article.published_at).toLocaleDateString()}</span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-slate-400">AI</span>
+                            <span className="text-sm font-bold text-indigo-600">
+                              {article.ai_relevance_score?.toFixed(1) || '0'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-slate-400">Score</span>
+                            <span className="text-sm font-bold text-slate-700">
+                              {article.final_score?.toFixed(1) || '0'}
+                            </span>
+                          </div>
+                        </div>
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig.bg} ${statusConfig.text}`}
+                        >
+                          {article.status}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="px-4 py-3 border-b bg-gray-50">
-              <h2 className="font-semibold text-gray-700">Post Details</h2>
+          <div className="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+              <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+                <span>📝</span> Post Preview
+              </h2>
             </div>
             {selectedArticle ? (
-              <div className="p-4 space-y-4">
-                <div>
-                  <h3 className="font-bold text-lg">{selectedArticle.title}</h3>
-                  <p className="text-gray-500 text-sm mt-1">
-                    {selectedArticle.source} • {new Date(selectedArticle.published_at).toLocaleDateString()}
-                  </p>
+              <div className="p-6 space-y-5">
+                <div className="bg-gradient-to-br from-slate-50 to-indigo-50 rounded-xl p-5 border border-slate-100">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center text-white font-bold text-lg">
+                      {selectedArticle.source.charAt(0)}
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-slate-800 text-lg leading-snug">{selectedArticle.title}</h3>
+                      <div className="flex items-center gap-3 mt-2 text-sm text-slate-500">
+                        <span className="font-medium">{selectedArticle.source}</span>
+                        <span>•</span>
+                        <span>{new Date(selectedArticle.published_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </div>
                   <a
                     href={selectedArticle.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 text-sm hover:underline mt-1 inline-block"
+                    className="inline-flex items-center gap-1 text-indigo-600 text-sm hover:text-indigo-700 mt-3 font-medium"
                   >
-                    View Original →
+                    View Original Article →
                   </a>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: 'AI Score', value: selectedArticle.ai_relevance_score?.toFixed(1) || '0' },
-                    { label: 'Novelty', value: selectedArticle.novelty_score?.toFixed(1) || '0' },
-                    { label: 'Final', value: selectedArticle.final_score?.toFixed(1) || '0' },
+                    { label: 'AI Relevance', value: selectedArticle.ai_relevance_score?.toFixed(1) || '0', color: 'text-indigo-600' },
+                    { label: 'Novelty', value: selectedArticle.novelty_score?.toFixed(1) || '0', color: 'text-purple-600' },
+                    { label: 'Final Score', value: selectedArticle.final_score?.toFixed(1) || '0', color: 'text-emerald-600' },
                   ].map((score) => (
-                    <div key={score.label} className="bg-gray-50 rounded p-2">
-                      <div className="text-xs text-gray-500">{score.label}</div>
-                      <div className="font-bold text-lg">{score.value}</div>
+                    <div key={score.label} className="bg-slate-50 rounded-xl p-4 text-center border border-slate-100">
+                      <div className={`text-2xl font-bold ${score.color}`}>{score.value}</div>
+                      <div className="text-xs text-slate-500 mt-1">{score.label}</div>
                     </div>
                   ))}
                 </div>
 
                 {selectedArticle.rejection_reason && (
-                  <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">
-                    Rejected: {selectedArticle.rejection_reason}
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700">
+                    <span className="font-semibold">Rejection Reason:</span> {selectedArticle.rejection_reason}
                   </div>
                 )}
 
                 {selectedPost ? (
                   <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Generated Post</label>
-                      <textarea
-                        value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
-                        className="w-full h-48 p-3 border rounded-lg text-sm font-mono"
-                        placeholder="No post generated yet"
-                      />
-                      <div className="text-xs text-gray-400 mt-1">{editContent.length}/1200 characters</div>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-slate-700">Generated Facebook Post</label>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            selectedPost.status === 'approved' ? 'bg-green-100 text-green-700' :
+                            selectedPost.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                            selectedPost.status === 'published' ? 'bg-emerald-100 text-emerald-700' :
+                            'bg-purple-100 text-purple-700'
+                          }`}>
+                            {selectedPost.status}
+                          </span>
+                          {isEditing ? null : (
+                            <button
+                              onClick={() => setIsEditing(true)}
+                              className="text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {isEditing ? (
+                        <div className="space-y-3">
+                          <textarea
+                            value={editContent}
+                            onChange={(e) => setEditContent(e.target.value)}
+                            className="w-full h-56 p-4 border-2 border-indigo-200 rounded-xl text-sm leading-relaxed resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            placeholder="Write your Facebook post here..."
+                          />
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">{editContent.length}/1200 characters</span>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  setIsEditing(false);
+                                  if (selectedArticle) selectArticle(selectedArticle);
+                                }}
+                                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => handleSaveEdit(selectedArticle.id)}
+                                className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg transition-colors"
+                              >
+                                Save Changes
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl p-5">
+                          <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">{selectedPost.content}</p>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => handleSaveEdit(selectedArticle.id)}
-                        className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-                      >
-                        Save Edit
-                      </button>
-                      <button
-                        onClick={() => handleApprove(selectedPost.id)}
-                        disabled={selectedPost.status === 'approved' || selectedPost.status === 'published'}
-                        className="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handleReject(selectedPost.id)}
-                        disabled={selectedPost.status === 'rejected' || selectedPost.status === 'published'}
-                        className="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 disabled:opacity-50"
-                      >
-                        Reject
-                      </button>
-                      <button
-                        onClick={() => handlePublish(selectedArticle.id)}
-                        disabled={selectedPost.status === 'published' || selectedPost.status !== 'approved'}
-                        className="px-3 py-1.5 bg-gray-900 text-white rounded text-sm hover:bg-black disabled:opacity-50"
-                      >
-                        Publish to Facebook
-                      </button>
+                    <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-100">
+                      {selectedPost.status !== 'approved' && selectedPost.status !== 'published' && (
+                        <button
+                          onClick={() => handleApprove(selectedPost.id)}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-green-500/30 transition-all"
+                        >
+                          <span>✓</span> Approve Post
+                        </button>
+                      )}
+                      {selectedPost.status !== 'rejected' && selectedPost.status !== 'published' && (
+                        <button
+                          onClick={() => handleReject(selectedPost.id)}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-sm font-medium transition-colors"
+                        >
+                          <span>✕</span> Reject
+                        </button>
+                      )}
+                      {selectedPost.status === 'approved' && (
+                        <button
+                          onClick={() => handlePublish(selectedArticle.id)}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-indigo-500/30 transition-all"
+                        >
+                          <span>🚀</span> Publish to Facebook
+                        </button>
+                      )}
                     </div>
 
                     {selectedPost.facebook_post_id && (
-                      <div className="text-sm text-gray-500">
-                        Published Post ID: <code className="bg-gray-100 px-1 rounded">{selectedPost.facebook_post_id}</code>
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3">
+                        <span className="text-emerald-500 text-xl">✓</span>
+                        <div>
+                          <p className="text-emerald-700 font-medium">Successfully Published!</p>
+                          <p className="text-emerald-600 text-sm">Facebook Post ID: {selectedPost.facebook_post_id}</p>
+                        </div>
                       </div>
                     )}
                   </>
                 ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <p>No post draft generated yet.</p>
-                    <p className="text-sm mt-1">Run the cron job to generate drafts.</p>
+                  <div className="text-center py-12">
+                    <div className="w-20 h-20 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <span className="text-4xl">✍️</span>
+                    </div>
+                    <p className="text-slate-500 font-medium">No post draft generated</p>
+                    <p className="text-slate-400 text-sm mt-1">Run the cron job to generate Facebook posts</p>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="p-8 text-center text-gray-500">
-                Select an article to view details
+              <div className="p-12 text-center">
+                <div className="w-20 h-20 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <span className="text-4xl">👈</span>
+                </div>
+                <p className="text-slate-500 font-medium">Select an article</p>
+                <p className="text-slate-400 text-sm mt-1">Click on an article from the left to view and edit its Facebook post</p>
               </div>
             )}
           </div>
         </div>
-      </div>
+      </main>
+
+      <style jsx global>{`
+        @keyframes slide-in {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        .animate-slide-in {
+          animation: slide-in 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 }
