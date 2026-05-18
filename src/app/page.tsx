@@ -28,6 +28,15 @@ interface Post {
   needs_review: boolean;
 }
 
+interface FetchResult {
+  fetched: number;
+  deduplicated: number;
+  scored: number;
+  drafted: number;
+  skipped: number;
+  errors: string[];
+}
+
 const STATUS_CONFIG: Record<string, { bg: string; text: string; border: string; icon: string }> = {
   fetched: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200', icon: '📥' },
   scored: { bg: 'bg-yellow-50', text: 'text-yellow-600', border: 'border-yellow-200', icon: '📊' },
@@ -48,6 +57,8 @@ export default function Dashboard() {
   const [editContent, setEditContent] = useState('');
   const [notification, setNotification] = useState<{ type: string; message: string } | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isFetchingNews, setIsFetchingNews] = useState(false);
+  const [fetchResult, setFetchResult] = useState<FetchResult | null>(null);
 
   useEffect(() => {
     fetchArticles();
@@ -64,6 +75,29 @@ export default function Dashboard() {
       showNotification('error', 'Failed to fetch articles');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleFetchNews() {
+    setIsFetchingNews(true);
+    setFetchResult(null);
+    try {
+      const res = await fetch('/api/cron/daily-news-agent');
+      const data = await res.json();
+
+      if (!res.ok) {
+        showNotification('error', data.error || 'Failed to fetch news');
+        return;
+      }
+
+      setFetchResult(data.stats);
+      showNotification('success', `Fetched ${data.stats?.drafted || 0} new post drafts!`);
+      fetchArticles();
+      setFilter('drafted');
+    } catch {
+      showNotification('error', 'Failed to fetch news from API');
+    } finally {
+      setIsFetchingNews(false);
     }
   }
 
@@ -185,18 +219,67 @@ export default function Dashboard() {
                 <p className="text-slate-500 text-sm">Automate your AI news content on Facebook</p>
               </div>
             </div>
-            <button
-              onClick={fetchArticles}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-            >
-              <span className={loading ? 'animate-spin' : ''}>↻</span>
-              <span className="text-sm font-medium text-slate-700">Refresh</span>
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleFetchNews}
+                disabled={isFetchingNews}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-indigo-500/30 transition-all disabled:opacity-70"
+              >
+                {isFetchingNews ? (
+                  <>
+                    <span className="animate-spin">⏳</span>
+                    <span>Fetching News...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📡</span>
+                    <span>Fetch News</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={fetchArticles}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                <span className={loading ? 'animate-spin' : ''}>↻</span>
+                <span className="text-sm font-medium text-slate-700">Refresh</span>
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
+        {fetchResult && (
+          <div className="mb-6 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-5 border border-indigo-100">
+            <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+              <span>📊</span> Fetch Results
+            </h3>
+            <div className="grid grid-cols-5 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-indigo-600">{fetchResult.fetched}</div>
+                <div className="text-xs text-slate-500">Articles Fetched</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-purple-600">{fetchResult.drafted}</div>
+                <div className="text-xs text-slate-500">Posts Generated</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-yellow-600">{fetchResult.scored}</div>
+                <div className="text-xs text-slate-500">Articles Scored</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-orange-600">{fetchResult.skipped}</div>
+                <div className="text-xs text-slate-500">Duplicates Skipped</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-red-600">{fetchResult.errors?.length || 0}</div>
+                <div className="text-xs text-slate-500">Errors</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-4 gap-4 mb-8">
           {[
             { label: 'Total Articles', value: stats.total, icon: '📰', color: 'from-slate-500 to-slate-600' },
@@ -263,7 +346,7 @@ export default function Dashboard() {
                     <span className="text-3xl">📭</span>
                   </div>
                   <p className="text-slate-500 font-medium">No articles found</p>
-                  <p className="text-slate-400 text-sm mt-1">Run the cron job to fetch news</p>
+                  <p className="text-slate-400 text-sm mt-1">Click "Fetch News" to get started</p>
                 </div>
               ) : (
                 filteredArticles.map((article) => {
@@ -470,7 +553,7 @@ export default function Dashboard() {
                       <span className="text-4xl">✍️</span>
                     </div>
                     <p className="text-slate-500 font-medium">No post draft generated</p>
-                    <p className="text-slate-400 text-sm mt-1">Run the cron job to generate Facebook posts</p>
+                    <p className="text-slate-400 text-sm mt-1">Click "Fetch News" to generate Facebook posts</p>
                   </div>
                 )}
               </div>
