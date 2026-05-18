@@ -7,8 +7,9 @@ import { generateFacebookPost } from '@/lib/post-generation';
 
 export const maxDuration = 120;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getSupabaseClient(): any {
+const MAX_POSTS_TO_GENERATE = 5;
+
+function getSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   return createClient(supabaseUrl, supabaseKey);
@@ -33,58 +34,69 @@ export async function GET(request: NextRequest) {
       errors: [] as string[],
     };
 
+    // Step 1: Fetch news
+    console.log('Fetching news...');
     let articles = await fetchAllNews();
     stats.fetched = articles.length;
+    console.log(`Fetched ${articles.length} articles`);
 
+    // Step 2: Deduplicate
     articles = deduplicateArticles(articles);
     stats.deduplicated = articles.length;
+    console.log(`After dedup: ${articles.length} articles`);
 
-    for (const article of articles) {
-      try {
-        const { data: existing } = await client
-          .from('articles')
-          .select('id, final_score')
-          .eq('url', article.url)
-          .single();
+    // Step 3: Check existing articles in DB (batch query)
+    console.log('Checking existing articles...');
+    const existingUrls = new Set<string>();
+    const { data: existingArticles } = await client
+      .from('articles')
+      .select('url, final_score')
+      .in('url', articles.map(a => a.url));
 
-        if (existing && existing.final_score && existing.final_score > 0) {
-          stats.skipped++;
-          continue;
-        }
+    existingArticles?.forEach((a: { url: string; final_score: number }) => {
+      if (a.final_score > 0) {
+        existingUrls.add(a.url);
+        stats.skipped++;
+      }
+    });
 
-        if (existing) {
-          const scoringResult = scoreArticle(article);
-          await client
-            .from('articles')
-            .update({
-              title: article.title,
-              description: article.description,
-              source: article.source,
-              published_at: article.publishedAt.toISOString(),
-              author: article.author,
-              image_url: article.imageUrl,
-              raw_content: article.rawContent,
-              ai_relevance_score: scoringResult.aiRelevanceScore,
-              novelty_score: scoringResult.noveltyScore,
-              credibility_score: scoringResult.credibilityScore,
-              audience_value_score: scoringResult.audienceValueScore,
-              virality_score: scoringResult.viralityScore,
-              final_score: scoringResult.finalScore,
-              rejection_reason: scoringResult.rejectionReason,
-              status: scoringResult.finalScore >= 7 ? 'scored' : 'rejected',
-            })
-            .eq('id', existing.id);
+    // Filter out already processed articles
+    articles = articles.filter(a => !existingUrls.has(a.url));
+    console.log(`After filtering existing: ${articles.length} articles`);
 
-          if (scoringResult.finalScore >= 7) {
-            await generateDraft(client, existing.id, article);
-            stats.drafted++;
-          }
-          stats.scored++;
-        } else {
-          const scoringResult = scoreArticle(article);
+    // Step 4: Score all articles in parallel
+    console.log('Scoring articles...');
+    const scoredArticles = articles.map(article => {
+      const scoringResult = scoreArticle(article);
+      return {
+        article,
+        scoringResult,
+        status: scoringResult.finalScore >= 7 ? 'qualified' : 'rejected',
+      };
+    });
+
+    stats.scored = scoredArticles.length;
+
+    // Get qualified articles (score >= 7) sorted by score
+    const qualifiedArticles = scoredArticles
+      .filter(sa => sa.status === 'qualified')
+      .sort((a, b) => b.scoringResult.finalScore - a.scoringResult.finalScore)
+      .slice(0, MAX_POSTS_TO_GENERATE);
+
+    console.log(`Qualified articles: ${qualifiedArticles.length}`);
+
+    // Step 5: Insert qualified articles and generate posts in parallel
+    if (qualifiedArticles.length > 0) {
+      console.log('Generating posts in parallel...');
+
+      const insertPromises = qualifiedArticles.map(async (sa) => {
+        const { article, scoringResult } = sa;
+
+        try {
+          // Upsert article
           const { data: newArticle } = await client
             .from('articles')
-            .insert({
+            .upsert({
               title: article.title,
               description: article.description,
               url: article.url,
@@ -100,21 +112,79 @@ export async function GET(request: NextRequest) {
               virality_score: scoringResult.viralityScore,
               final_score: scoringResult.finalScore,
               rejection_reason: scoringResult.rejectionReason,
-              status: scoringResult.finalScore >= 7 ? 'scored' : 'rejected',
-            })
+              status: 'drafted',
+            }, { onConflict: 'url' })
             .select()
             .single();
 
-          if (newArticle && scoringResult.finalScore >= 7) {
-            await generateDraft(client, newArticle.id, article);
-            stats.drafted++;
+          if (newArticle) {
+            // Generate Facebook post using AI
+            const postContent = await generateFacebookPost({
+              title: article.title,
+              description: article.description,
+              url: article.url,
+              source: article.source,
+              publishedAt: article.publishedAt,
+            });
+
+            // Save the generated post
+            await client
+              .from('generated_posts')
+              .upsert({
+                article_id: newArticle.id,
+                content: postContent,
+                needs_review: true,
+                status: 'drafted',
+              }, { onConflict: 'article_id' });
+
+            return { success: true, url: article.url };
           }
-          stats.scored++;
+        } catch (err) {
+          console.error(`Failed to process ${article.url}:`, err);
+          stats.errors.push(`Failed: ${article.url}`);
+          return { success: false, url: article.url };
         }
-      } catch (err) {
-        stats.errors.push(`Failed to process article: ${article.url}`);
-      }
+      });
+
+      // Wait for all insertions to complete
+      const results = await Promise.all(insertPromises);
+      stats.drafted = results.filter(r => r.success).length;
     }
+
+    // Step 6: Also mark rejected articles in DB (those with score < 7)
+    const rejectedArticles = scoredArticles
+      .filter(sa => sa.status === 'rejected')
+      .slice(0, 20); // Limit to avoid too many writes
+
+    if (rejectedArticles.length > 0) {
+      const rejectPromises = rejectedArticles.map(async (sa) => {
+        const { article, scoringResult } = sa;
+        try {
+          await client
+            .from('articles')
+            .upsert({
+              title: article.title,
+              description: article.description,
+              url: article.url,
+              source: article.source,
+              published_at: article.publishedAt.toISOString(),
+              ai_relevance_score: scoringResult.aiRelevanceScore,
+              novelty_score: scoringResult.noveltyScore,
+              credibility_score: scoringResult.credibilityScore,
+              audience_value_score: scoringResult.audienceValueScore,
+              virality_score: scoringResult.viralityScore,
+              final_score: scoringResult.finalScore,
+              rejection_reason: scoringResult.rejectionReason,
+              status: 'rejected',
+            }, { onConflict: 'url' });
+        } catch (err) {
+          // Ignore errors for rejected articles
+        }
+      });
+      await Promise.all(rejectPromises);
+    }
+
+    console.log('Done! Stats:', stats);
 
     return NextResponse.json({
       success: true,
@@ -130,39 +200,5 @@ export async function GET(request: NextRequest) {
       },
       { status: 500 }
     );
-  }
-}
-
-async function generateDraft(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: any,
-  articleId: string,
-  article: { title: string; description: string | null; url: string; source: string; publishedAt: Date }
-) {
-  try {
-    const postContent = await generateFacebookPost({
-      title: article.title,
-      description: article.description,
-      url: article.url,
-      source: article.source,
-      publishedAt: article.publishedAt,
-    });
-
-    await client.from('generated_posts').upsert(
-      {
-        article_id: articleId,
-        content: postContent,
-        needs_review: false,
-        status: 'drafted',
-      },
-      { onConflict: 'article_id' }
-    );
-
-    await client
-      .from('articles')
-      .update({ status: 'drafted' })
-      .eq('id', articleId);
-  } catch (error) {
-    console.error(`Failed to generate post for ${article.url}:`, error);
   }
 }
