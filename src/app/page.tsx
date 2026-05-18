@@ -37,6 +37,11 @@ interface FetchResult {
   errors: string[];
 }
 
+interface GeneratedImage {
+  imageUrl: string;
+  filename: string;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   fetched: 'bg-blue-100 text-blue-700',
   scored: 'bg-yellow-100 text-yellow-700',
@@ -48,7 +53,6 @@ const STATUS_COLORS: Record<string, string> = {
   failed: 'bg-gray-100 text-gray-700',
 };
 
-// Memoized article card component
 const ArticleCard = memo(({ article, isSelected, onClick }: {
   article: Article;
   isSelected: boolean;
@@ -101,6 +105,8 @@ function Dashboard() {
   const [isFetchingNews, setIsFetchingNews] = useState(false);
   const [fetchResult, setFetchResult] = useState<FetchResult | null>(null);
   const [articleLoading, setArticleLoading] = useState(false);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState<GeneratedImage | null>(null);
 
   const fetchArticles = useCallback(async () => {
     setLoading(true);
@@ -145,6 +151,7 @@ function Dashboard() {
     setSelectedPost(null);
     setEditContent('');
     setIsEditing(false);
+    setGeneratedImage(null);
     setArticleLoading(true);
 
     try {
@@ -160,6 +167,41 @@ function Dashboard() {
       setArticleLoading(false);
     }
   }, [articleLoading]);
+
+  const handleGenerateImage = useCallback(async () => {
+    if (!selectedPost || !selectedArticle) return;
+
+    setIsGeneratingImage(true);
+    setGeneratedImage(null);
+
+    try {
+      const res = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          headline: selectedArticle.title,
+          bodyText: selectedPost.content,
+          source: selectedArticle.source,
+          date: new Date(selectedArticle.published_at).toLocaleDateString(),
+          articleUrl: selectedArticle.url,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        showNotification('error', data.error || 'Failed to generate image');
+        return;
+      }
+
+      setGeneratedImage({ imageUrl: data.imageUrl, filename: data.filename });
+      showNotification('success', 'Image generated successfully!');
+    } catch {
+      showNotification('error', 'Failed to generate image');
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  }, [selectedPost, selectedArticle]);
 
   const handleApprove = useCallback(async (postId: string) => {
     try {
@@ -523,6 +565,74 @@ function Dashboard() {
                       ) : (
                         <div className="bg-slate-50 rounded-lg p-4">
                           <p className="text-sm text-slate-700 whitespace-pre-wrap">{selectedPost.content}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Image Generation Section */}
+                    <div className="border-t border-slate-200 pt-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="text-sm font-medium text-slate-700">Image Generation</label>
+                      </div>
+
+                      <button
+                        onClick={handleGenerateImage}
+                        disabled={isGeneratingImage}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-violet-700 hover:to-purple-700 disabled:opacity-50 transition-colors"
+                      >
+                        {isGeneratingImage ? (
+                          <>
+                            <span className="animate-spin">⏳</span>
+                            <span>Generating Image...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>🖼️</span>
+                            <span>Convert to Image (1080x1080)</span>
+                          </>
+                        )}
+                      </button>
+
+                      {isGeneratingImage && (
+                        <div className="mt-3 text-center text-sm text-slate-500">
+                          Generating high-quality PNG image...
+                        </div>
+                      )}
+
+                      {generatedImage && (
+                        <div className="mt-4 space-y-3">
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                            <div className="flex items-center gap-2 text-green-700">
+                              <span>✓</span>
+                              <span className="font-medium">Image Generated!</span>
+                            </div>
+                          </div>
+
+                          <div className="border border-slate-200 rounded-lg overflow-hidden">
+                            <img
+                              src={generatedImage.imageUrl}
+                              alt="Generated Facebook Post"
+                              className="w-full h-auto"
+                            />
+                          </div>
+
+                          <div className="flex gap-2">
+                            <a
+                              href={generatedImage.imageUrl}
+                              download={generatedImage.filename}
+                              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded text-sm font-medium hover:bg-indigo-700"
+                            >
+                              <span>⬇️</span>
+                              Download Image
+                            </a>
+                            <button
+                              onClick={handleGenerateImage}
+                              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded text-sm font-medium hover:bg-slate-200"
+                            >
+                              <span>🔄</span>
+                              Regenerate
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI News Post</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      width: 1080px;
+      height: 1080px;
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #0f0f23 100%);
+      color: #ffffff;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .container {
+      width: 100%;
+      height: 100%;
+      padding: 60px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .header {
+      margin-bottom: 40px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      padding: 12px 24px;
+      border-radius: 50px;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 30px;
+    }
+
+    .badge::before {
+      content: '🤖';
+      font-size: 18px;
+    }
+
+    .content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .headline {
+      font-size: 52px;
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 32px;
+      background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .divider {
+      width: 80px;
+      height: 4px;
+      background: linear-gradient(90deg, #6366f1, #a855f7);
+      border-radius: 2px;
+      margin-bottom: 32px;
+    }
+
+    .body-text {
+      font-size: 24px;
+      line-height: 1.6;
+      color: #c7d2fe;
+      max-width: 900px;
+    }
+
+    .hashtags {
+      margin-top: 40px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .hashtag {
+      background: rgba(99, 102, 241, 0.2);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      padding: 8px 16px;
+      border-radius: 50px;
+      font-size: 16px;
+      font-weight: 500;
+      color: #a5b4fc;
+    }
+
+    .footer {
+      margin-top: auto;
+      padding-top: 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid rgba(99, 102, 241, 0.2);
+    }
+
+    .source-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .source-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .source-text {
+      font-size: 18px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .date-text {
+      font-size: 14px;
+      color: #6b7280;
+    }
+
+    .footer-right {
+      text-align: right;
+    }
+
+    .powered-by {
+      font-size: 14px;
+      color: #6b7280;
+    }
+
+    .brand-name {
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .corner-accent {
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .corner-accent.top-right {
+      top: -100px;
+      right: -100px;
+    }
+
+    .corner-accent.bottom-left {
+      bottom: -100px;
+      left: -100px;
+    }
+
+    .grid-pattern {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image:
+        linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="grid-pattern"></div>
+  <div class="corner-accent top-right"></div>
+  <div class="corner-accent bottom-left"></div>
+
+  <div class="container">
+    <div class="header">
+      <div class="badge">AI News</div>
+    </div>
+
+    <div class="content">
+      <h1 class="headline" id="headline">Loading headline...</h1>
+      <div class="divider"></div>
+      <p class="body-text" id="body-text">Loading content...</p>
+      <div class="hashtags" id="hashtags"></div>
+    </div>
+
+    <div class="footer">
+      <div class="source-info">
+        <div class="source-icon" id="source-icon">A</div>
+        <div>
+          <div class="source-text" id="source-name">Source</div>
+          <div class="date-text" id="article-date">Date</div>
+        </div>
+      </div>
+      <div class="footer-right">
+        <div class="powered-by">Generated by</div>
+        <div class="brand-name">AI News Publisher</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

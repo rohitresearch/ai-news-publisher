@@ -44,4 +44,8 @@ next-env.d.ts
 test-*.ts
 push-posts.ts
 check-db.ts
+fix-existing.ts
 generated-posts.json
+
+# generated images (auto-generated at runtime)
+public/generated-posts
