@@ -45,26 +45,7 @@ export async function GET(request: NextRequest) {
     stats.deduplicated = articles.length;
     console.log(`After dedup: ${articles.length} articles`);
 
-    // Step 3: Check existing articles in DB (batch query)
-    console.log('Checking existing articles...');
-    const existingUrls = new Set<string>();
-    const { data: existingArticles } = await client
-      .from('articles')
-      .select('url, final_score')
-      .in('url', articles.map(a => a.url));
-
-    existingArticles?.forEach((a: { url: string; final_score: number }) => {
-      if (a.final_score > 0) {
-        existingUrls.add(a.url);
-        stats.skipped++;
-      }
-    });
-
-    // Filter out already processed articles
-    articles = articles.filter(a => !existingUrls.has(a.url));
-    console.log(`After filtering existing: ${articles.length} articles`);
-
-    // Step 4: Score all articles in parallel
+    // Step 3: Score all articles in parallel (before checking DB)
     console.log('Scoring articles...');
     const scoredArticles = articles.map(article => {
       const scoringResult = scoreArticle(article);
@@ -85,14 +66,31 @@ export async function GET(request: NextRequest) {
 
     console.log(`Qualified articles: ${qualifiedArticles.length}`);
 
-    // Step 5: Insert qualified articles and generate posts in parallel
+    // Step 4: Process each qualified article - insert/update and generate post
     if (qualifiedArticles.length > 0) {
-      console.log('Generating posts in parallel...');
+      console.log('Processing articles and generating posts in parallel...');
 
-      const insertPromises = qualifiedArticles.map(async (sa) => {
+      const processPromises = qualifiedArticles.map(async (sa) => {
         const { article, scoringResult } = sa;
 
         try {
+          // Check if this article already has a generated post
+          const { data: existingPost } = await client
+            .from('generated_posts')
+            .select('id')
+            .eq('article_id', (await client
+              .from('articles')
+              .select('id')
+              .eq('url', article.url)
+              .single())?.data?.id)
+            .single();
+
+          if (existingPost) {
+            console.log(`Article already has a post: ${article.url}`);
+            stats.skipped++;
+            return { success: false, reason: 'already_has_post' };
+          }
+
           // Upsert article
           const { data: newArticle } = await client
             .from('articles')
@@ -130,58 +128,27 @@ export async function GET(request: NextRequest) {
             // Save the generated post
             await client
               .from('generated_posts')
-              .upsert({
+              .insert({
                 article_id: newArticle.id,
                 content: postContent,
                 needs_review: true,
                 status: 'drafted',
-              }, { onConflict: 'article_id' });
+              });
 
+            console.log(`Generated post for: ${article.title.substring(0, 40)}...`);
             return { success: true, url: article.url };
           }
         } catch (err) {
           console.error(`Failed to process ${article.url}:`, err);
           stats.errors.push(`Failed: ${article.url}`);
-          return { success: false, url: article.url };
+          return { success: false, reason: 'error' };
         }
       });
 
       // Wait for all insertions to complete
-      const results = await Promise.all(insertPromises);
+      const results = await Promise.all(processPromises);
       stats.drafted = results.filter(r => r.success).length;
-    }
-
-    // Step 6: Also mark rejected articles in DB (those with score < 7)
-    const rejectedArticles = scoredArticles
-      .filter(sa => sa.status === 'rejected')
-      .slice(0, 20); // Limit to avoid too many writes
-
-    if (rejectedArticles.length > 0) {
-      const rejectPromises = rejectedArticles.map(async (sa) => {
-        const { article, scoringResult } = sa;
-        try {
-          await client
-            .from('articles')
-            .upsert({
-              title: article.title,
-              description: article.description,
-              url: article.url,
-              source: article.source,
-              published_at: article.publishedAt.toISOString(),
-              ai_relevance_score: scoringResult.aiRelevanceScore,
-              novelty_score: scoringResult.noveltyScore,
-              credibility_score: scoringResult.credibilityScore,
-              audience_value_score: scoringResult.audienceValueScore,
-              virality_score: scoringResult.viralityScore,
-              final_score: scoringResult.finalScore,
-              rejection_reason: scoringResult.rejectionReason,
-              status: 'rejected',
-            }, { onConflict: 'url' });
-        } catch (err) {
-          // Ignore errors for rejected articles
-        }
-      });
-      await Promise.all(rejectPromises);
+      stats.skipped += results.filter(r => r.reason === 'already_has_post').length;
     }
 
     console.log('Done! Stats:', stats);
